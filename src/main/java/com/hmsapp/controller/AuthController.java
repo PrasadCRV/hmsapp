@@ -6,6 +6,9 @@ import com.hmsapp.payload.LoginDto;
 import com.hmsapp.payload.ProfileDto;
 import com.hmsapp.payload.UserDto;
 import com.hmsapp.repository.UserRepository;
+import com.hmsapp.service.JWTService;
+import com.hmsapp.service.OTPService;
+import com.hmsapp.service.SMSService;
 import com.hmsapp.service.UserService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,9 +21,17 @@ import java.util.Optional;
 @RequestMapping("/api/auth")
 public class AuthController {
     private UserService userService;
+    private OTPService otpService;
+    private UserRepository userRepository;
+    private SMSService smsservice;
+    private JWTService jwtService;
 
-    public AuthController(UserService userService) {
+    public AuthController(UserService userService, OTPService otpService, UserRepository userRepository, SMSService smsservice, JWTService jwtService) {
         this.userService = userService;
+        this.otpService = otpService;
+        this.userRepository = userRepository;
+        this.smsservice = smsservice;
+        this.jwtService = jwtService;
     }
 
     //used for user sign-up
@@ -47,6 +58,37 @@ public class AuthController {
             return new  ResponseEntity<>(jwtToken,HttpStatus.OK);
         }
         return new ResponseEntity<>("Invalid",HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+    @PostMapping("/login-otp")
+    public ResponseEntity<?> loginWithOtp(@RequestParam String mobile) {
+        Optional<User> byMobile = userRepository.findByMobile(mobile);
+        if(byMobile.isPresent()) {
+            String otp = otpService.generateOTP(mobile);
+
+            if(otp!=null){
+                smsservice.sendSMS("+917676150798", "Your One Time Password (OTP) is: " + otp);  // sending otp to user's mobile number'
+                return new ResponseEntity<>("Check your mobile for the OPT.",HttpStatus.OK);
+            }
+        }
+
+        return new ResponseEntity<>("Invalid mobile number",HttpStatus.INTERNAL_SERVER_ERROR);
+
+    }
+
+    @PostMapping("/verify-otp")
+    public String verifyOtp(@RequestParam String mobile,
+    @RequestParam String otp) {
+        Optional<User> byMobile = userRepository.findByMobile(mobile);
+        if(byMobile.isPresent()) {
+            User user = byMobile.get();
+            if (otpService.verifyOTP(mobile, otp)) {
+                String token = jwtService.generateToken(user.getUsername());
+                return "Login successful\nHere is your token:\n" + token;
+            } else {
+                return "Invalid attempt";
+            }
+        }
+        return "Invalid mobile number";
     }
 
     @GetMapping
